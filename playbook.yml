@@ -1,0 +1,97 @@
+---
+- hosts: localhost
+  gather_facts: true 
+
+  vars_files: 
+    - vars.yml
+
+  tasks:
+    - name: Add SSH key to digitalocean
+      community.digitalocean.digital_ocean_sshkey:
+        oauth_token: "{{ oauth_token }}"
+        name: myKey
+        ssh_pub_key: "{{ ssh_public }}"
+        state: present
+      register: pubKey
+  
+    - name: Create a new droplet
+      community.digitalocean.digital_ocean_droplet:
+        oauth_token: "{{ oauth_token }}"
+        name: "steampunk-{{ item.type }}-{{ item.index }}"
+        tags: "{{ item.tags }}"
+        unique_name: true
+        ssh_keys:
+          - "{{ pubKey.data.ssh_key.fingerprint }}"
+        size: "{{ droplet_size }}"
+        region: "{{ droplet_region }}"
+        image: "{{ droplet_image }}"
+        state: present
+      loop:
+        - type: appserver
+          index: 1
+          tags:
+            - steampunk-test
+            - app
+        - type: appserver
+          index: 2
+          tags: 
+            - steampunk-test
+            - app
+
+
+- hosts: steampunk-test
+  gather_facts: false
+  remote_user: root
+
+  vars_files:
+    - vars.yml
+
+  tasks:
+    - name: Install Aptitude
+      apt:
+        name: aptitude
+        state: latest
+        update_cache: true
+
+    - name: Setup passowrdless sudo
+      lineinfile:
+        path: /etc/sudoers
+        state: present
+        regexp: '^%sudo'
+        line: '%sudo ALL=(ALL) NOPASSWD: ALL'
+        validate: '/usr/sbin/visudo -cf %s'
+
+    - name: Create a new regular user with sudo privs
+      user:
+        name: "{{ created_username }}"
+        state: present
+        groups: sudo
+        append: true
+        create_home: true
+
+    - name: copy it from current user and set authorized key for remote user
+      authorized_key:
+        user: "{{ created_username }}"
+        state: present
+        key: "{{ lookup('file', lookup('env', 'HOME') + '/.ssh/id_rsa.pub') }}"
+
+    - name: update apt and install required packages
+      apt:
+        pkg:
+          - curl
+          - vim 
+          - git
+          - ufw
+        state: present
+        update_cache: true
+
+    - name: UFW - Allow SSH connections
+      ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: UFW - Enable/Deny by default
+      ufw:
+        state: enabled
+        default: deny
+
