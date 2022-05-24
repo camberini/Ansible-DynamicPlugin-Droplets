@@ -25,7 +25,7 @@
         size: "{{ droplet_size }}"
         region: "{{ droplet_region }}"
         image: "{{ droplet_image }}"
-        state: present
+        state: absent
       loop:
         - type: appserver
           index: 1
